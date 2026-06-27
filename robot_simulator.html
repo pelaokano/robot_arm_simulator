@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Robot GUI — Python Control</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #2a2a2a; color: #ccc;
+  font-family: 'JetBrains Mono','Fira Mono','Consolas',monospace;
+  font-size: 13px; display: flex; height: 100vh; overflow: hidden;
+}
+#panel {
+  width: 300px; min-width: 300px; background: #1e1e1e;
+  border-right: 1px solid #333; display: flex; flex-direction: column; overflow: hidden;
+}
+#panel-header { padding: 10px 12px 8px; border-bottom: 1px solid #333; background: #181818; }
+#panel-header h1 { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #5af; font-weight: 600; }
+#panel-header p  { font-size: 10px; color: #555; margin-top: 2px; }
+
+#joints-section { padding: 10px 12px; border-bottom: 1px solid #333; }
+.section-label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #444; margin-bottom: 6px; }
+.joint-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+.joint-label { width: 20px; color: #5af; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.joint-slider {
+  flex: 1; height: 3px; -webkit-appearance: none;
+  background: #333; border-radius: 2px; outline: none; cursor: pointer;
+}
+.joint-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 11px; height: 11px;
+  background: #5af; border-radius: 50%; cursor: pointer;
+}
+.joint-val { width: 44px; text-align: right; color: #777; font-size: 11px; flex-shrink: 0; }
+
+#tcp-section { padding: 10px 12px; border-bottom: 1px solid #333; }
+#tcp-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
+.tcp-cell { background: #141414; border: 1px solid #2a2a2a; border-radius: 3px; padding: 5px 7px; }
+.tcp-cell-label { font-size: 9px; color: #444; text-transform: uppercase; letter-spacing: .06em; }
+.tcp-cell-val { font-size: 12px; color: #ddd; margin-top: 2px; }
+
+#code-section { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 10px 12px; }
+#code-editor {
+  flex: 1; background: #141414; border: 1px solid #2a2a2a; border-radius: 3px;
+  color: #ccc; font-family: inherit; font-size: 12px; padding: 8px; resize: none;
+  outline: none; line-height: 1.6; tab-size: 4;
+}
+#code-editor:focus { border-color: #2a4a7f; }
+#run-btn {
+  margin-top: 7px; padding: 7px; background: #1a3a6a; border: 1px solid #2a5aaa;
+  border-radius: 3px; color: #5af; font-family: inherit; font-size: 11px;
+  letter-spacing: .08em; text-transform: uppercase; cursor: pointer;
+}
+#run-btn:hover { background: #1f4880; }
+
+#gripper-section { padding: 10px 12px; border-bottom: 1px solid #333; }
+.gripper-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.gripper-label { font-size: 11px; color: #5af; width: 50px; flex-shrink: 0; }
+.gripper-slider { flex: 1; height: 3px; -webkit-appearance: none; background: #333; border-radius: 2px; outline: none; cursor: pointer; }
+.gripper-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; background: #fa0; border-radius: 50%; cursor: pointer; }
+.gripper-val { width: 30px; text-align: right; color: #777; font-size: 11px; flex-shrink: 0; }
+.gripper-btns { display: flex; gap: 5px; margin-top: 6px; }
+.gripper-btn { flex: 1; padding: 4px; background: #1a2a1a; border: 1px solid #2a4a2a; border-radius: 3px; color: #4a8; font-family: inherit; font-size: 10px; cursor: pointer; text-align: center; }
+.gripper-btn:hover { background: #1f3a1f; }
+.gripper-btn.open { background: #1a1a2a; border-color: #2a2a4a; color: #5af; }
+.gripper-btn.open:hover { background: #1f1f3a; }
+
+#console-section {
+  border-top: 1px solid #333; height: 90px; overflow-y: auto;
+  padding: 6px 12px; background: #111;
+}
+.con-line { font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-all; color: #4a6; }
+.con-line.err { color: #e55; }
+.con-line.sys { color: #555; }
+
+#viewport { flex: 1; position: relative; overflow: hidden; }
+#viewport canvas { display: block; width: 100% !important; height: 100% !important; }
+#examples-bar { position: absolute; top: 10px; left: 10px; display: flex; gap: 5px; flex-wrap: wrap; }
+.ex-btn {
+  background: rgba(20,20,20,.9); border: 1px solid #333; border-radius: 3px;
+  color: #555; font-family: inherit; font-size: 10px; padding: 4px 8px; cursor: pointer;
+}
+.ex-btn:hover { color: #5af; border-color: #2a4a7f; }
+#status { position: absolute; bottom: 10px; right: 12px; font-size: 10px; color: #444; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <div id="panel-header">
+    <h1>Robot GUI</h1>
+    <p>glumb/robot-gui + Python interpreter</p>
+  </div>
+  <div id="joints-section">
+    <div class="section-label">Joints (deg)</div>
+    <div id="joint-rows"></div>
+  </div>
+  <div id="tcp-section">
+    <div class="section-label">TCP</div>
+    <div id="tcp-grid">
+      <div class="tcp-cell"><div class="tcp-cell-label">X</div><div class="tcp-cell-val" id="tcp-x">—</div></div>
+      <div class="tcp-cell"><div class="tcp-cell-label">Y</div><div class="tcp-cell-val" id="tcp-y">—</div></div>
+      <div class="tcp-cell"><div class="tcp-cell-label">Z</div><div class="tcp-cell-val" id="tcp-z">—</div></div>
+    </div>
+  </div>
+  <div id="gripper-section">
+    <div class="section-label">Gripper</div>
+    <div class="gripper-row">
+      <span class="gripper-label">Opening</span>
+      <input class="gripper-slider" type="range" id="gripper-slider" min="0" max="100" step="1" value="0">
+      <span class="gripper-val" id="gripper-val">0%</span>
+    </div>
+    <div class="gripper-btns">
+      <button class="gripper-btn open" onclick="gripperAPI.open()">Open</button>
+      <button class="gripper-btn" onclick="gripperAPI.close()">Close</button>
+    </div>
+  </div>
+  <div id="code-section">
+    <div class="section-label">Control</div>
+    <div id="py-status" style="font-size:11px;color:#4a6;padding:6px 0">Waiting for Python...</div>
+  </div>
+  <div id="console-section"></div>
+</div>
+
+<div id="viewport">
+  <div id="examples-bar">
+    <button class="ex-btn" onclick="loadEx('basic')">basic</button>
+    <button class="ex-btn" onclick="loadEx('sweep')">sweep</button>
+    <button class="ex-btn" onclick="loadEx('wave')">wave</button>
+    <button class="ex-btn" onclick="loadEx('ik')">IK</button>
+    <button class="ex-btn" onclick="loadEx('gripper')">gripper</button>
+    <button class="ex-btn" onclick="loadEx('pickplace')">pick&place</button>
+    <button class="ex-btn" onclick="loadEx('numpy')">numpy-style</button>
+  </div>
+  <div id="status">left-drag: orbit  |  scroll: zoom  |  right-drag: pan</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script>
+// ============================================================
+// INVERSE KINEMATIC — verbatim from glumb/robot-gui
+// ============================================================
+class InverseKinematic {
+  constructor(geometry) {
+    this.V1_length_x_z = Math.sqrt(geometry[1][0]**2 + geometry[1][2]**2)
+    this.V4_length_x_y_z = Math.sqrt(geometry[4][0]**2 + geometry[4][2]**2 + geometry[4][1]**2)
+    this.J_initial_absolute = []
+    const p = [0,0,0]
+    for (let i = 0; i < geometry.length; i++) {
+      this.J_initial_absolute.push([...p])
+      p[0]+=geometry[i][0]; p[1]+=geometry[i][1]; p[2]+=geometry[i][2]
+    }
+    this.R_corrected = [0,0,0,0,0,0]
+    this.R_corrected[1] += Math.PI/2
+    this.R_corrected[1] -= Math.atan2(geometry[1][0], geometry[1][2])
+    this.R_corrected[2] += Math.PI/2
+    this.R_corrected[2] += Math.atan2(geometry[2][2]+geometry[3][2], geometry[2][0]+geometry[3][0])
+    this.R_corrected[2] += Math.atan2(geometry[1][0], geometry[1][2])
+    this.R_corrected[4] += Math.PI
+    this.geometry = geometry
+  }
+
+  calculateAngles(x,y,z,a,b,c,angles,config=[false,false,false]) {
+    const cc=Math.cos(c),sc=Math.sin(c),cb=Math.cos(b),sb=Math.sin(b),ca=Math.cos(a),sa=Math.sin(a)
+    const tzv=[sb,-sa*cb,ca*cb]
+    const R=[...this.R_corrected]
+    const J=Array.from({length:6},()=>[0,0,0])
+    J[5]=[x,y,z]
+    J[4][0]=x-this.V4_length_x_y_z*tzv[0]
+    J[4][1]=y-this.V4_length_x_y_z*tzv[1]
+    J[4][2]=z-this.V4_length_x_y_z*tzv[2]
+    const aR0=Math.asin(this.J_initial_absolute[4][1]/this.length2(J[4][1],J[4][0]))
+    R[0]+=Math.atan2(J[4][1],J[4][0])-aR0
+    if(config[0]) R[0]+=2*aR0-Math.PI
+    J[1][0]=Math.cos(R[0])*this.geometry[0][0]+Math.sin(R[0])*-this.geometry[0][1]
+    J[1][1]=Math.sin(R[0])*this.geometry[0][0]+Math.cos(R[0])*this.geometry[0][1]
+    J[1][2]=this.geometry[0][2]
+    const J4xz=[Math.cos(R[0])*J[4][0]+Math.sin(R[0])*J[4][1],
+                Math.sin(R[0])*J[4][0]+Math.cos(R[0])*-J[4][1],J[4][2]]
+    const J1J4sq=(J4xz[0]-this.J_initial_absolute[1][0])**2+(J4xz[2]-this.J_initial_absolute[1][2])**2
+    const J2J4=this.length2(this.geometry[2][0]+this.geometry[3][0],this.geometry[2][2]+this.geometry[3][2])
+    const flip=(config[1]?!config[0]:config[0])?1:-1
+    R[2]+=flip*Math.acos((-J1J4sq+J2J4**2+this.V1_length_x_z**2)/(2*J2J4*this.V1_length_x_z))
+    R[2]-=2*Math.PI
+    R[2]=((R[2]+3*Math.PI)%(2*Math.PI))-Math.PI
+    const J1J4=Math.sqrt(J1J4sq)
+    R[1]-=Math.atan2(J4xz[2]-this.J_initial_absolute[1][2],J4xz[0]-this.J_initial_absolute[1][0])
+    R[1]+=flip*Math.acos((J1J4sq-J2J4**2+this.V1_length_x_z**2)/(2*J1J4*this.V1_length_x_z))
+    R[1]=((R[1]+3*Math.PI)%(2*Math.PI))-Math.PI
+    const ta=Math.cos(R[0]),tb=Math.sin(R[0]),tc=this.geometry[0][0],d_=this.geometry[0][2],e_=-this.geometry[0][1]
+    const f_=Math.cos(R[1]),g_=Math.sin(R[1]),h_=this.geometry[1][0],i_=this.geometry[1][2],j_=-this.geometry[1][1]
+    const k_=Math.cos(R[2]),l_=Math.sin(R[2]),m_=this.geometry[2][0],n_=this.geometry[2][2],o_=-this.geometry[2][1]
+    J[2][0]=ta*tc+tb*e_+ta*f_*h_-ta*-g_*i_+tb*j_
+    J[2][1]=-(-tb*tc+ta*e_-tb*f_*h_+tb*-g_*i_+ta*j_)
+    J[2][2]=d_+-g_*h_+f_*i_
+    J[3][0]=J[2][0]+ta*f_*k_*m_-ta*-g_*-l_*m_-ta*-g_*k_*n_-ta*f_*-l_*n_+tb*o_
+    J[3][1]=J[2][1]-(-tb*f_*k_*m_+tb*-g_*-l_*m_+tb*-g_*k_*n_+tb*f_*-l_*n_+ta*o_)
+    J[3][2]=J[2][2]+-g_*k_*m_+f_*-l_*m_+f_*k_*n_+g_*-l_*n_
+    const J4J5=[J[5][0]-J[4][0],J[5][1]-J[4][1],J[5][2]-J[4][2]]
+    const J4J3=[J[3][0]-J[4][0],J[3][1]-J[4][1],J[3][2]-J[4][2]]
+    const norm=this.cross(J4J5,J4J3)
+    const ZYp=[-10*Math.sin(R[0]),10*Math.cos(R[0]),0]
+    const ZYn=this.cross(ZYp,J4J3)
+    R[3]=this.angleBetween(norm,ZYp,ZYn)
+    if(config[2])R[3]+=Math.PI
+    R[3]=((R[3]+3*Math.PI)%(2*Math.PI))-Math.PI
+    R[4]+=(config[2]?1:-1)*this.angleBetween2(J4J5,J4J3)
+    R[4]=((R[4]+3*Math.PI)%(2*Math.PI))-Math.PI
+    const tyv=[-cb*sc,ca*cc-sa*sb*sc,sa*cc+ca*sb*sc]
+    R[5]-=this.angleBetween(norm,tyv,this.cross(tzv,tyv))
+    if(config[2])R[5]+=Math.PI
+    R[5]=((R[5]+3*Math.PI)%(2*Math.PI))-Math.PI
+    for(let i=0;i<6;i++)angles[i]=R[i]
+  }
+
+  calculateCoordinates(R0,R1,R2,R3,R4,R5,J) {
+    const a=Math.cos(R0),b=Math.sin(R0),c=this.geometry[0][0],d=this.geometry[0][1],e=this.geometry[0][2]
+    const f=Math.cos(R1),g=Math.sin(R1),h=this.geometry[1][0],i=this.geometry[1][1],j=this.geometry[1][2]
+    const k=Math.cos(R2),l=Math.sin(R2),m=this.geometry[2][0],n=this.geometry[2][1],o=this.geometry[2][2]
+    const p=Math.cos(R3),q=Math.sin(R3),r=this.geometry[3][0],s=this.geometry[3][1],t=this.geometry[3][2]
+    const u=Math.cos(R4),v=Math.sin(R4),w=this.geometry[4][0],x=this.geometry[4][1],y=this.geometry[4][2]
+    const A=Math.cos(R5),B=Math.sin(R5)
+    if(!J[0])for(let i=0;i<6;i++)J[i]=Array(6).fill(0)
+    J[0][0]=0;J[0][1]=0;J[0][2]=0
+    J[1][0]=a*c-b*d;J[1][1]=b*c+a*d;J[1][2]=e
+    J[2][0]=J[1][0]+a*f*h-b*i+a*g*j;J[2][1]=J[1][1]+b*f*h+a*i+b*g*j;J[2][2]=J[1][2]-g*h+f*j
+    J[3][0]=J[2][0]+a*f*k*m-a*g*l*m-b*n+a*g*k*o+a*f*l*o
+    J[3][1]=J[2][1]+b*f*k*m-b*g*l*m+a*n+b*g*k*o+b*f*l*o
+    J[3][2]=J[2][2]-g*k*m-f*l*m+f*k*o-g*l*o
+    J[4][0]=J[3][0]+a*f*k*r-a*g*l*r-b*p*s+a*g*k*q*s+a*f*l*q*s+a*g*k*p*t+a*f*l*p*t+b*q*t
+    J[4][1]=J[3][1]+b*f*k*r-b*g*l*r+a*p*s+b*g*k*q*s+b*f*l*q*s+b*g*k*p*t+b*f*l*p*t-a*q*t
+    J[4][2]=J[3][2]-g*k*r-f*l*r+f*k*q*s-g*l*q*s+f*k*p*t-g*l*p*t
+    J[5][0]=J[4][0]+a*f*k*u*w-a*g*l*u*w-a*g*k*p*v*w-a*f*l*p*v*w-b*q*v*w-b*p*x+a*g*k*q*x+a*f*l*q*x+a*g*k*p*u*y+a*f*l*p*u*y+b*q*u*y+a*f*k*v*y-a*g*l*v*y
+    J[5][1]=J[4][1]+b*f*k*u*w-b*g*l*u*w-b*g*k*p*v*w-b*f*l*p*v*w+a*q*v*w+a*p*x+b*g*k*q*x+b*f*l*q*x+b*g*k*p*u*y+b*f*l*p*u*y-a*q*u*y+b*f*k*v*y-b*g*l*v*y
+    J[5][2]=J[4][2]-g*k*u*w-f*l*u*w-f*k*p*v*w+g*l*p*v*w+f*k*q*x-g*l*q*x+f*k*p*u*y-g*l*p*u*y-g*k*v*y-f*l*v*y
+  }
+
+  cross(a,b,r=[]){r[0]=a[1]*b[2]-a[2]*b[1];r[1]=a[2]*b[0]-a[0]*b[2];r[2]=a[0]*b[1]-a[1]*b[0];return r}
+  dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]}
+  length3(v){return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])}
+  length2(a,b){return Math.sqrt(a*a+b*b)}
+  angleBetween(vA,vB,ref){
+    const n=this.length3(this.cross(vA,vB))
+    const ang=Math.atan2(n,this.dot(vA,vB))
+    return ang*((ref[0]*vA[0]+ref[1]*vA[1]+ref[2]*vA[2])>0.0001?1:-1)
+  }
+  angleBetween2(v1,v2){return Math.atan2(this.length3(this.cross(v1,v2)),this.dot(v1,v2))}
+}
+
+// ============================================================
+// GEOMETRY & LIMITS (from Robot.js)
+// ============================================================
+const GEO=[[4.8,0,7.3],[0,0,13],[1,0,2],[12.6,0,0],[3.6,0,0]]
+const LIM_RAD=[[-190,190],[-90,90],[-135,45],[-90,75],[-139,90],[-188,181]].map(l=>l.map(d=>d*Math.PI/180))
+const LIM_DEG=LIM_RAD.map(l=>l.map(r=>r*180/Math.PI))
+const IK=new InverseKinematic(GEO)
+
+// ============================================================
+// THREE.JS — Z-UP matching original THREEScene.js
+// ============================================================
+const renderer=new THREE.WebGLRenderer({antialias:true})
+renderer.setClearColor(0x333333)
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2))
+document.getElementById('viewport').appendChild(renderer.domElement)
+
+const scene=new THREE.Scene()
+const camera=new THREE.PerspectiveCamera(35,1,1,10000)
+camera.up.set(0,0,1)
+camera.position.set(60,60,40)
+scene.add(camera)
+scene.add(new THREE.AmbientLight(0xaaaaaa))
+const dl=new THREE.DirectionalLight(0xaaaaaa)
+dl.position.set(1,1.3,1).normalize()
+scene.add(dl)
+const grid=new THREE.GridHelper(100,20,0x444444,0x383838)
+grid.rotation.x=Math.PI/2
+scene.add(grid)
+scene.add(new THREE.AxesHelper(5))
+
+// ============================================================
+// MATERIALS
+// ============================================================
+const M = {
+  base:      new THREE.MeshLambertMaterial({color: 0x2a2a35}),
+  body:      new THREE.MeshLambertMaterial({color: 0xd0d4de}),
+  motor:     new THREE.MeshLambertMaterial({color: 0x1a2a4a}),
+  motorRing: new THREE.MeshLambertMaterial({color: 0x3355aa}),
+  arm:       new THREE.MeshLambertMaterial({color: 0xc8ccd8}),
+  armDark:   new THREE.MeshLambertMaterial({color: 0x9098a8}),
+  wrist:     new THREE.MeshLambertMaterial({color: 0x1a2a4a}),
+  gripBase:  new THREE.MeshLambertMaterial({color: 0x223355}),
+  finger:    new THREE.MeshLambertMaterial({color: 0x334466}),
+  fingertip: new THREE.MeshLambertMaterial({color: 0xeebb44}),
+}
+
+function box(w,h,d,mat){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat) }
+function cyl(rt,rb,h,seg,mat){ return new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg||24), mat) }
+function sphere(r,mat){ return new THREE.Mesh(new THREE.SphereGeometry(r,16,12), mat) }
+
+// ============================================================
+// REALISTIC ROBOT — explicit morphology per segment
+// Kinematics: THREERobot.prototype.setAngles preserved exactly
+// ============================================================
+class THREERobot {
+  constructor(V_initial, limits, parentScene) {
+    this.THREE   = new THREE.Group()
+    this.robotBones = []   // pivot Object3D per joint (kinematics unchanged)
+    this.joints  = []
+
+    const links = [...V_initial, [0,0,0]]
+    let parent = this.THREE, px=0, py=0, pz=0
+
+    for (let i = 0; i < links.length; i++) {
+      const [lx,ly,lz] = links[i]
+      const pivot = new THREE.Object3D()
+      pivot.position.set(px, py, pz)
+      parent.add(pivot)
+      this.robotBones.push(pivot)
+
+      // add visual geometry for this segment
+      this._addVisual(pivot, lx, ly, lz, i)
+
+      px=lx; py=ly; pz=lz
+      parent = pivot
+    }
+
+    parentScene.add(this.THREE)
+    this.angles = [0,0,0,0,0,0]
+  }
+
+  _addVisual(pivot, lx, ly, lz, i) {
+    switch(i) {
+
+      case 0: {
+        // BASE box sits ON the ground: height=3, center at Z=+1.5
+        const baseBox = box(6, 6, 3, M.base)
+        baseBox.position.set(0, 0, 1.5)
+        pivot.add(baseBox)
+        const plate = box(5.6, 5.6, 0.25, M.motor)
+        plate.position.set(0, 0, 3.1)
+        pivot.add(plate)
+        // J0 motor drum (Z-axis rotation)
+        const m0 = cyl(2.0, 2.2, 2.0, 24, M.motor)
+        m0.rotation.x = Math.PI/2
+        m0.position.set(0, 0, 4.2)
+        pivot.add(m0)
+        const ring0 = cyl(2.25, 2.25, 0.35, 24, M.motorRing)
+        ring0.rotation.x = Math.PI/2
+        ring0.position.set(0, 0, 4.2)
+        pivot.add(ring0)
+        // vertical column up to J1 height
+        const col = box(2.0, 2.0, lz - 4.5, M.body)
+        col.position.set(0, 0, 5.2 + (lz - 4.5)/2)
+        pivot.add(col)
+        // horizontal arm offset in X to J1
+        const xArm = box(lx + 0.5, 1.6, 1.8, M.armDark)
+        xArm.position.set(lx/2, 0, 5.2)
+        pivot.add(xArm)
+        break
+      }
+
+      case 1: {
+        // J1 shoulder pitch motor (Y-axis) + upper arm along Z
+        const m1 = cyl(1.8, 2.0, 3.2, 24, M.motor)
+        pivot.add(m1)
+        const ring1 = cyl(2.05, 2.05, 0.35, 24, M.motorRing)
+        pivot.add(ring1)
+        const armLen = lz
+        const armTube = cyl(0.85, 1.05, armLen - 1.5, 12, M.arm)
+        armTube.rotation.x = Math.PI/2
+        armTube.position.set(0, 0, armLen/2)
+        pivot.add(armTube)
+        break
+      }
+
+      case 2: {
+        // J2 elbow pitch motor + short offset connector
+        const m2 = cyl(1.5, 1.7, 2.6, 24, M.motor)
+        pivot.add(m2)
+        const ring2 = cyl(1.75, 1.75, 0.3, 24, M.motorRing)
+        pivot.add(ring2)
+        const stub2 = box(lx + 0.4, 1.3, lz + 0.4, M.body)
+        stub2.position.set(lx/2, 0, lz/2)
+        pivot.add(stub2)
+        break
+      }
+
+      case 3: {
+        // J3 forearm roll motor + forearm tube along X
+        const m3 = cyl(1.3, 1.5, 2.4, 24, M.motor)
+        m3.rotation.z = Math.PI/2
+        pivot.add(m3)
+        const ring3 = cyl(1.55, 1.55, 0.3, 24, M.motorRing)
+        ring3.rotation.z = Math.PI/2
+        pivot.add(ring3)
+        const foreLen = lx
+        const foreTube = cyl(0.7, 0.85, foreLen - 2.0, 12, M.arm)
+        foreTube.rotation.z = Math.PI/2
+        foreTube.position.set(foreLen/2, 0, 0)
+        pivot.add(foreTube)
+        break
+      }
+
+      case 4: {
+        // J4 wrist pitch (Y-axis) — motor housing + short connector along X
+        const m4 = cyl(1.1, 1.25, 2.0, 24, M.motor)
+        pivot.add(m4)
+        const ring4 = cyl(1.3, 1.3, 0.28, 24, M.motorRing)
+        pivot.add(ring4)
+        // connector stub from J4 to J5 along X
+        const conn4 = cyl(0.5, 0.6, lx - 0.5, 12, M.armDark)
+        conn4.rotation.z = Math.PI/2
+        conn4.position.set(lx/2, 0, 0)
+        pivot.add(conn4)
+        break
+      }
+
+      case 5: {
+        // J5 wrist roll — axis is X in robot frame (forearm direction)
+        // Cylinder default is Y-axis; rotate.z = PI/2 to align with X
+        const m5 = cyl(0.9, 1.0, 1.5, 24, M.wrist)
+        m5.rotation.z = Math.PI/2
+        pivot.add(m5)
+        // flange disc (rotates with J5)
+        const flange = cyl(1.1, 1.1, 0.25, 24, M.motorRing)
+        flange.rotation.z = Math.PI/2
+        flange.position.set(0.88, 0, 0)
+        pivot.add(flange)
+        break
+      }
+    }
+  }
+
+  setAngles(angles) {
+    this.angles = angles
+    this.robotBones[0].rotation.z = angles[0]
+    this.robotBones[1].rotation.y = angles[1]
+    this.robotBones[2].rotation.y = angles[2]
+    this.robotBones[3].rotation.x = angles[3]
+    this.robotBones[4].rotation.y = angles[4]
+    this.robotBones[5].rotation.x = angles[5]   // J5 rolls around X (forearm axis)
+  }
+}
+
+// ============================================================
+// GRIPPER — lobster/crab claw style
+// Two curved jaws pivot from a shared knuckle point.
+// Each jaw = proximal segment + distal curved tip.
+// opening: 0=fully closed, 1=fully open (~60 deg each side)
+// ============================================================
+class Gripper {
+  constructor(parentBone) {
+    this.group = new THREE.Group()
+    // Attach directly to J5 bone, extend along X (forearm axis)
+    this.group.position.set(1.0, 0, 0)
+
+    // ── Palm body (fixed structural block) ──
+    const palm = box(1.6, 1.6, 1.2, M.gripBase)
+    palm.position.set(0.8, 0, 0)
+    this.group.add(palm)
+
+    // Spine tube from palm to knuckle
+    const spine = cyl(0.28, 0.32, 1.4, 10, M.wrist)
+    spine.rotation.z = Math.PI/2
+    spine.position.set(2.1, 0, 0)
+    this.group.add(spine)
+
+    // Knuckle hub — cylinder along Y so jaws pivot around Z
+    const knuckle = cyl(0.52, 0.52, 1.4, 16, M.motor)
+    knuckle.position.set(2.8, 0, 0)
+    this.group.add(knuckle)
+    const kRing = cyl(0.58, 0.58, 0.2, 16, M.motorRing)
+    kRing.position.set(2.8, 0, 0)
+    this.group.add(kRing)
+
+    // ── Left jaw — pivots around Z at knuckle, opens toward +Y ──
+    this.leftJaw = new THREE.Object3D()
+    this.leftJaw.position.set(2.8, 0, 0)
+    this.group.add(this.leftJaw)
+
+    // proximal arm (along X, offset in +Y)
+    const lProx = box(1.9, 0.4, 0.4, M.finger)
+    lProx.position.set(0.95, 0.22, 0)
+    this.leftJaw.add(lProx)
+    // distal segment angled inward (toward -Y = closing direction)
+    const lDist = box(1.3, 0.35, 0.35, M.finger)
+    lDist.position.set(2.25, 0.38, 0)
+    lDist.rotation.z = 0.42   // angle tip inward
+    this.leftJaw.add(lDist)
+    // contact pad
+    const lPad = box(0.42, 0.42, 0.42, M.fingertip)
+    lPad.position.set(2.88, 0.18, 0)
+    this.leftJaw.add(lPad)
+
+    // ── Right jaw — mirrored, opens toward -Y ──
+    this.rightJaw = new THREE.Object3D()
+    this.rightJaw.position.set(2.8, 0, 0)
+    this.group.add(this.rightJaw)
+
+    const rProx = box(1.9, 0.4, 0.4, M.finger)
+    rProx.position.set(0.95, -0.22, 0)
+    this.rightJaw.add(rProx)
+    const rDist = box(1.3, 0.35, 0.35, M.finger)
+    rDist.position.set(2.25, -0.38, 0)
+    rDist.rotation.z = -0.42
+    this.rightJaw.add(rDist)
+    const rPad = box(0.42, 0.42, 0.42, M.fingertip)
+    rPad.position.set(2.88, -0.18, 0)
+    this.rightJaw.add(rPad)
+
+    parentBone.add(this.group)
+    this.setOpening(0)
+  }
+
+  // Jaws rotate around Z at knuckle: left opens +Y, right opens -Y
+  setOpening(t) {
+    this._opening = Math.max(0, Math.min(1, t))
+    const maxAngle = 0.62  // ~35 deg each jaw
+    this.leftJaw.rotation.z  =  maxAngle * this._opening
+    this.rightJaw.rotation.z = -maxAngle * this._opening
+  }
+
+  getOpening() { return this._opening || 0 }
+}
+
+const robot3D   = new THREERobot(GEO, LIM_RAD, scene)
+
+const lastBone  = robot3D.robotBones[robot3D.robotBones.length - 1]
+const gripper3D = new Gripper(lastBone)
+
+// ============================================================
+// ORBIT (Z-up spherical)
+// ============================================================
+let dragging=false,panning=false,lastM={x:0,y:0}
+let sph={phi:Math.PI/4,theta:Math.PI/3.5,r:90}
+let tgt=new THREE.Vector3(5,5,12)
+const vp=document.getElementById('viewport')
+
+function updateCam(){
+  camera.position.set(
+    tgt.x+sph.r*Math.sin(sph.theta)*Math.cos(sph.phi),
+    tgt.y+sph.r*Math.sin(sph.theta)*Math.sin(sph.phi),
+    tgt.z+sph.r*Math.cos(sph.theta))
+  camera.lookAt(tgt)
+}
+vp.addEventListener('mousedown',e=>{
+  if(e.button===0)dragging=true
+  if(e.button===2)panning=true
+  lastM={x:e.clientX,y:e.clientY}
+})
+window.addEventListener('mouseup',()=>{dragging=false;panning=false})
+window.addEventListener('mousemove',e=>{
+  const dx=e.clientX-lastM.x,dy=e.clientY-lastM.y
+  if(dragging){sph.phi-=dx*.006;sph.theta-=dy*.006;sph.theta=Math.max(.05,Math.min(Math.PI-.05,sph.theta))}
+  if(panning){
+    const fwd=new THREE.Vector3().subVectors(tgt,camera.position).normalize()
+    const right=new THREE.Vector3().crossVectors(fwd,camera.up).normalize()
+    tgt.addScaledVector(right,-dx*.04).addScaledVector(camera.up,dy*.04)
+  }
+  lastM={x:e.clientX,y:e.clientY}
+})
+vp.addEventListener('wheel',e=>{sph.r=Math.max(5,Math.min(300,sph.r+e.deltaY*.05))},{passive:true})
+vp.addEventListener('contextmenu',e=>e.preventDefault())
+
+function resize(){
+  const w=vp.clientWidth,h=vp.clientHeight
+  renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix()
+}
+window.addEventListener('resize',resize);resize()
+
+function animate(){requestAnimationFrame(animate);updateCam();renderer.render(scene,camera)}
+animate()
+
+// ============================================================
+// ROBOT STATE API
+// ============================================================
+const state={angles:[0,0,0,0,0,0], gripper:0}
+
+function applyDeg(angDeg){
+  const rad=angDeg.map(d=>d*Math.PI/180)
+  state.angles=rad;robot3D.setAngles(rad)
+  updateSliders(angDeg);updateTCP()
+}
+
+function updateTCP(){
+  const J=Array.from({length:6},()=>Array(6).fill(0))
+  IK.calculateCoordinates(...state.angles,J)
+  document.getElementById('tcp-x').textContent=J[5][0].toFixed(2)
+  document.getElementById('tcp-y').textContent=J[5][1].toFixed(2)
+  document.getElementById('tcp-z').textContent=J[5][2].toFixed(2)
+}
+
+// Gripper UI API
+const gripperAPI = {
+  set(t) {
+    const v = Math.max(0, Math.min(1, t))
+    state.gripper = v
+    gripper3D.setOpening(v)
+    document.getElementById('gripper-slider').value = Math.round(v*100)
+    document.getElementById('gripper-val').textContent = Math.round(v*100)+'%'
+  },
+  open()  { this.set(1) },
+  close() { this.set(0) },
+  get()   { return state.gripper }
+}
+document.getElementById('gripper-slider').addEventListener('input', e=>{
+  gripperAPI.set(parseFloat(e.target.value)/100)
+})
+
+const robotAPI={
+  reset(){applyDeg([0,0,0,0,0,0]);gripperAPI.close()},
+  set_angle(j,deg){const c=state.angles.map(r=>r*180/Math.PI);c[j]=deg;applyDeg(c)},
+  set_joints(arr){applyDeg([...arr])},
+  get_joints(){return state.angles.map(r=>r*180/Math.PI)},
+  get_tcp(){
+    const J=Array.from({length:6},()=>Array(6).fill(0))
+    IK.calculateCoordinates(...state.angles,J)
+    return[J[5][0],J[5][1],J[5][2]]
+  },
+  move_to(x,y,z,a=Math.PI,b=0,c=0,cfg=[false,false,false]){
+    const angles=[]
+    try{IK.calculateAngles(x,y,z,a,b,c,angles,cfg);applyDeg(angles.map(r=>r*180/Math.PI))}
+    catch(e){_log('IK error: '+e,'err')}
+  },
+  open_gripper()     { gripperAPI.open() },
+  close_gripper()    { gripperAPI.close() },
+  set_gripper(t)     { gripperAPI.set(t) },
+  get_gripper()      { return gripperAPI.get() },
+}
+
+// ============================================================
+// SLIDERS
+// ============================================================
+function buildSliders(){
+  const cont=document.getElementById('joint-rows')
+  for(let i=0;i<6;i++){
+    const[lo,hi]=LIM_DEG[i]
+    const row=document.createElement('div');row.className='joint-row'
+    row.innerHTML=`<span class="joint-label">J${i}</span>
+      <input class="joint-slider" type="range" id="s${i}" min="${lo}" max="${hi}" step=".5" value="0">
+      <span class="joint-val" id="v${i}">0.0°</span>`
+    cont.appendChild(row)
+    document.getElementById(`s${i}`).addEventListener('input',e=>{
+      const d=parseFloat(e.target.value)
+      document.getElementById(`v${i}`).textContent=d.toFixed(1)+'°'
+      robotAPI.set_angle(i,d)
+    })
+  }
+}
+function updateSliders(angDeg){
+  for(let i=0;i<6;i++){
+    document.getElementById(`s${i}`).value=angDeg[i]
+    document.getElementById(`v${i}`).textContent=angDeg[i].toFixed(1)+'°'
+  }
+}
+buildSliders();applyDeg([0,0,0,0,0,0])
+
+// ============================================================
+// CONSOLE
+// ============================================================
+function _log(msg,cls=''){
+  const cons=document.getElementById('console-section')
+  if(!cons) return
+  const d=document.createElement('div');d.className='con-line'+(cls?' '+cls:'');d.textContent=msg
+  cons.appendChild(d);cons.scrollTop=cons.scrollHeight
+}
+
+// Python control via HTTP polling (no in-browser interpreter needed)
+function runCode() {
+  const code = document.getElementById('code-editor').value
+  // Code editor is for reference only - control comes from Python script
+  _log('Use robot_arm.py to control from Python.', 'sys')
+}
+
+
+// ============================================================
+// HTTP POLLING CLIENT — polls /state every 100ms
+// Works with any browser, VPN, firewall
+// ============================================================
+(function() {
+  const statusEl = document.createElement('div')
+  statusEl.style.cssText = 'position:fixed;top:8px;right:12px;font-size:10px;font-family:monospace;padding:3px 8px;border-radius:3px;z-index:999;color:#fff'
+  document.body.appendChild(statusEl)
+
+  let lastSeq = -1
+  let failCount = 0
+
+  async function poll() {
+    try {
+      const r = await fetch('/state?seq=' + lastSeq, {cache: 'no-store'})
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      const data = await r.json()
+      failCount = 0
+      statusEl.textContent = 'Python connected'
+      statusEl.style.background = '#2a6'
+
+      if (data.seq !== undefined && data.seq !== lastSeq) {
+        lastSeq = data.seq
+        handleMsg(data)
+      }
+    } catch(e) {
+      failCount++
+      if (failCount > 3) {
+        statusEl.textContent = 'Python disconnected'
+        statusEl.style.background = '#a33'
+      }
+    }
+    setTimeout(poll, 80)
+  }
+
+  function handleMsg(msg) {
+    const pyEl = document.getElementById('py-status')
+    if (pyEl) { pyEl.textContent = 'Python connected ✔'; pyEl.style.color = '#4a6' }
+    if (msg.type === 'set_joints') {
+      if (Array.isArray(msg.angles) && msg.angles.length === 6)
+        applyDeg(msg.angles)
+    }
+    else if (msg.type === 'set_gripper') {
+      const v = parseFloat(msg.value)
+      if (!isNaN(v)) gripperAPI.set(v)
+    }
+    else if (msg.type === 'move_to') {
+      const {x, y, z, rx=Math.PI, ry=0, rz=0} = msg
+      const anglesRad = []
+      try {
+        IK.calculateAngles(x, y, z, rx, ry, rz, anglesRad)
+        applyDeg(anglesRad.map(r => r * 180 / Math.PI))
+      } catch(e) { console.warn('IK failed', e) }
+    }
+  }
+
+  statusEl.textContent = 'connecting...'
+  statusEl.style.background = '#555'
+  poll()
+})()
+
+</script>
